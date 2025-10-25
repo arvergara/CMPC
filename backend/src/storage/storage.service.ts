@@ -474,16 +474,16 @@ export class StorageService {
       // Enviar notificación a cada investigador
       for (const [email, storages] of byInvestigador.entries()) {
         try {
-          const investigadorNombre =
+          const responsableNombre =
             storages[0].sample?.requirement?.investigador?.nombre || 'Investigador';
 
           await this.notificationsService.notifyStorageExpiration({
             to: email,
-            investigadorNombre,
-            samples: storages.map((s) => ({
+            responsableNombre,
+            muestrasProximasVencer: storages.map((s) => ({
               codigoQR: s.sample?.codigoQR || '',
               ubicacion: s.ubicacionFisica,
-              fechaVencimiento: s.fechaVencimientoEstimada,
+              fechaVencimiento: s.fechaVencimientoEstimada!,
             })),
           });
 

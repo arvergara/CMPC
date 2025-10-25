@@ -457,7 +457,7 @@ export class SamplesService {
     });
 
     // Enviar notificación al investigador
-    if (sample.requirement?.investigador) {
+    if (sample.requirement?.investigador && sample.fechaRecepcion) {
       try {
         await this.notificationsService.notifySampleReceived({
           to: sample.requirement.investigador.email,
@@ -630,9 +630,8 @@ export class SamplesService {
     format: 'png' | 'svg' | 'dataURL' = 'png',
   ): Promise<Buffer | string> {
     try {
-      const options = {
+      const baseOptions = {
         errorCorrectionLevel: 'H' as const,
-        type: format === 'png' ? ('png' as const) : ('svg' as const),
         width: 300,
         margin: 2,
         color: {
@@ -643,16 +642,16 @@ export class SamplesService {
 
       if (format === 'png') {
         // Retorna un Buffer con la imagen PNG
-        return await QRCode.toBuffer(codigoQR, options);
+        return await QRCode.toBuffer(codigoQR, baseOptions);
       } else if (format === 'svg') {
         // Retorna un string con el SVG
         return await QRCode.toString(codigoQR, {
-          ...options,
+          ...baseOptions,
           type: 'svg',
         });
       } else if (format === 'dataURL') {
         // Retorna un Data URL (base64)
-        return await QRCode.toDataURL(codigoQR, options);
+        return await QRCode.toDataURL(codigoQR, baseOptions);
       }
 
       throw new BadRequestException(`Formato no soportado: ${format}`);

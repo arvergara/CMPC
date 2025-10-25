@@ -419,7 +419,7 @@ export class AnalysisService {
     });
 
     // Enviar notificación al investigador
-    if (updated.sample?.requirement?.investigador) {
+    if (updated.sample?.requirement?.investigador && updated.fechaFin) {
       try {
         await this.notificationsService.notifyAnalysisCompleted({
           to: updated.sample.requirement.investigador.email,

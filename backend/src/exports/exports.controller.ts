@@ -81,7 +81,7 @@ export class ExportsController {
   async exportRequirementsExcel(
     @Query('estado') estado?: string,
     @Query('plantaId') plantaId?: string,
-    @Res({ passthrough: true }) res?: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const filters: any = {};
     if (estado) filters.estado = estado;
@@ -131,7 +131,7 @@ export class ExportsController {
   async exportSamplesExcel(
     @Query('estado') estado?: string,
     @Query('requirementId') requirementId?: string,
-    @Res({ passthrough: true }) res?: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const filters: any = {};
     if (estado) filters.estado = estado;
