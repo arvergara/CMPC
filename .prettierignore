@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+build
+.next
+out
+
+# Cache
+.turbo
+.cache
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Database
+*.db
+*.sqlite
+
+# Generated files
+**/.prisma
+**/prisma/migrations
+
+# Coverage
+coverage
+*.lcov
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

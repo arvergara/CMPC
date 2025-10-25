@@ -1,0 +1,350 @@
+// Prisma Schema for CMPC LIMS
+// Database: PostgreSQL 16
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USERS & AUTH
+// ============================================
+
+enum UserRole {
+  ADMIN
+  JEFE_LAB
+  LABORATORISTA
+  BODEGA
+  INVESTIGADOR
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  nombre        String
+  rol           UserRole
+  plantaId      String?  @map("planta_id")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  planta                Planta?             @relation(fields: [plantaId], references: [id])
+  requirements          Requirement[]       @relation("RequirementInvestigador")
+  qrEvents              QREvent[]
+  analysisResponsable   Analysis[]          @relation("AnalysisResponsable")
+  auditLogs             AuditLog[]
+
+  @@map("users")
+}
+
+// ============================================
+// MASTER DATA
+// ============================================
+
+model Planta {
+  id          String   @id @default(uuid())
+  nombre      String   @unique
+  codigo      String   @unique
+  ubicacion   String
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users        User[]
+  requirements Requirement[]
+  laboratories Laboratory[]
+
+  @@map("plantas")
+}
+
+model Laboratory {
+  id               String   @id @default(uuid())
+  nombre           String
+  plantaId         String   @map("planta_id")
+  responsableEmail String?  @map("responsable_email")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  planta           Planta          @relation(fields: [plantaId], references: [id])
+  requirements     Requirement[]
+  analysisTypes    AnalysisType[]
+
+  @@map("laboratories")
+}
+
+model AnalysisType {
+  id                  String   @id @default(uuid())
+  nombre              String
+  descripcion         String?
+  metodo              String?
+  tiempoEstimadoHoras Int      @map("tiempo_estimado_horas")
+  laboratoryId        String?  @map("laboratory_id")
+  equiposRequeridos   String[] @map("equipos_requeridos")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  laboratory Laboratory? @relation(fields: [laboratoryId], references: [id])
+  analysis   Analysis[]
+
+  @@map("analysis_types")
+}
+
+// ============================================
+// REQUIREMENTS
+// ============================================
+
+enum RequirementStatus {
+  DRAFT
+  ENVIADO
+  EN_PROCESO
+  COMPLETADO
+  CANCELADO
+}
+
+model Requirement {
+  id                    String            @id @default(uuid())
+  codigo                String            @unique
+  investigadorId        String            @map("investigador_id")
+  fechaSolicitud        DateTime          @default(now()) @map("fecha_solicitud")
+  tipoMuestra           String            @map("tipo_muestra")
+  cantidadEsperada      Int               @map("cantidad_esperada")
+  estado                RequirementStatus @default(DRAFT)
+  laboratorioAsignadoId String?           @map("laboratorio_asignado_id")
+  descripcion           String?
+  documentosAdjuntos    String[]          @map("documentos_adjuntos")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  investigador          User        @relation("RequirementInvestigador", fields: [investigadorId], references: [id])
+  planta                Planta?     @relation(fields: [plantaId], references: [id])
+  plantaId              String?     @map("planta_id")
+  laboratorioAsignado   Laboratory? @relation(fields: [laboratorioAsignadoId], references: [id])
+  samples               Sample[]
+
+  @@index([investigadorId])
+  @@index([estado])
+  @@map("requirements")
+}
+
+// ============================================
+// SAMPLES
+// ============================================
+
+enum SampleStatus {
+  ESPERADA
+  RECIBIDA
+  EN_ANALISIS
+  ANALISIS_COMPLETO
+  ALMACENADA
+  ELIMINADA
+}
+
+model Sample {
+  id                   String       @id @default(uuid())
+  codigoQR             String       @unique @map("codigo_qr")
+  requirementId        String       @map("requirement_id")
+  tipo                 String
+  formato              String?
+  estado               SampleStatus @default(ESPERADA)
+  fechaRecepcion       DateTime?    @map("fecha_recepcion")
+  fechaAnalisisInicio  DateTime?    @map("fecha_analisis_inicio")
+  fechaAnalisisFin     DateTime?    @map("fecha_analisis_fin")
+  parentSampleId       String?      @map("parent_sample_id")
+  esContramuestra      Boolean      @default(false) @map("es_contramuestra")
+  cantidad             String?
+  observaciones        String?
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  requirement    Requirement @relation(fields: [requirementId], references: [id])
+  parentSample   Sample?     @relation("SampleDerivatives", fields: [parentSampleId], references: [id])
+  derivedSamples Sample[]    @relation("SampleDerivatives")
+  qrEvents       QREvent[]
+  storage        Storage?
+  analysis       Analysis[]
+
+  @@index([codigoQR])
+  @@index([requirementId])
+  @@index([estado])
+  @@map("samples")
+}
+
+// ============================================
+// QR EVENTS (Immutable)
+// ============================================
+
+enum QREventType {
+  CREATED
+  PRINTED
+  SCANNED
+  RECEIVED
+  ANALYSIS_START
+  ANALYSIS_END
+  STORED
+  MOVED
+  DISPOSED
+}
+
+model QREvent {
+  id           String      @id @default(uuid())
+  sampleId     String      @map("sample_id")
+  tipoEvento   QREventType @map("tipo_evento")
+  usuarioId    String      @map("usuario_id")
+  timestamp    DateTime    @default(now())
+  ubicacion    String?
+  metadataJson Json?       @map("metadata_json")
+
+  // Relations
+  sample  Sample @relation(fields: [sampleId], references: [id])
+  usuario User   @relation(fields: [usuarioId], references: [id])
+
+  @@index([sampleId])
+  @@index([timestamp])
+  @@map("qr_events")
+}
+
+// ============================================
+// STORAGE
+// ============================================
+
+enum StorageStatus {
+  DISPONIBLE
+  OCUPADA
+  RESERVADA
+  VENCIDA
+}
+
+model Storage {
+  id                       String        @id @default(uuid())
+  sampleId                 String        @unique @map("sample_id")
+  ubicacionFisica          String        @map("ubicacion_fisica")
+  estanteria               String
+  caja                     String?
+  posicion                 String?
+  fechaIngreso             DateTime      @default(now()) @map("fecha_ingreso")
+  fechaVencimientoEstimada DateTime?     @map("fecha_vencimiento_estimada")
+  estado                   StorageStatus @default(OCUPADA)
+  solicitudEliminacion     Boolean       @default(false) @map("solicitud_eliminacion")
+  aprobadaEliminacion      Boolean       @default(false) @map("aprobada_eliminacion")
+  createdAt                DateTime      @default(now()) @map("created_at")
+  updatedAt                DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  sample Sample @relation(fields: [sampleId], references: [id])
+
+  @@index([estado])
+  @@index([fechaVencimientoEstimada])
+  @@map("storage")
+}
+
+// ============================================
+// ANALYSIS
+// ============================================
+
+enum AnalysisStatus {
+  PENDIENTE
+  EN_PROCESO
+  COMPLETADO
+  CANCELADO
+}
+
+model Analysis {
+  id              String         @id @default(uuid())
+  sampleId        String         @map("sample_id")
+  tipoAnalisisId  String         @map("tipo_analisis_id")
+  estado          AnalysisStatus @default(PENDIENTE)
+  responsableId   String?        @map("responsable_id")
+  resultadosJson  Json?          @map("resultados_json")
+  archivoPdfUrl   String?        @map("archivo_pdf_url")
+  fechaInicio     DateTime?      @map("fecha_inicio")
+  fechaFin        DateTime?      @map("fecha_fin")
+  observaciones   String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  sample        Sample       @relation(fields: [sampleId], references: [id])
+  tipoAnalisis  AnalysisType @relation(fields: [tipoAnalisisId], references: [id])
+  responsable   User?        @relation("AnalysisResponsable", fields: [responsableId], references: [id])
+  auditLogs     AuditLog[]
+
+  @@index([sampleId])
+  @@index([estado])
+  @@map("analysis")
+}
+
+// ============================================
+// AUDIT LOG (Immutable)
+// ============================================
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+}
+
+model AuditLog {
+  id                    String      @id @default(uuid())
+  usuarioId             String      @map("usuario_id")
+  tabla                 String
+  registroId            String      @map("registro_id")
+  accion                AuditAction
+  valoresAnterioresJson Json?       @map("valores_anteriores_json")
+  valoresNuevosJson     Json?       @map("valores_nuevos_json")
+  justificacion         String?
+  timestamp             DateTime    @default(now())
+  ipAddress             String?     @map("ip_address")
+  userAgent             String?     @map("user_agent")
+
+  // Relations
+  usuario   User      @relation(fields: [usuarioId], references: [id])
+  analysis  Analysis? @relation(fields: [analysisId], references: [id])
+  analysisId String?  @map("analysis_id")
+
+  @@index([tabla, registroId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================
+// CONFIGURATION
+// ============================================
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  descripcion String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("system_config")
+}
+
+model PrinterConfig {
+  id        String   @id @default(uuid())
+  nombre    String
+  plantaId  String   @map("planta_id")
+  ipAddress String   @map("ip_address")
+  puerto    Int      @default(9100)
+  modelo    String   @default("Zebra ZD421")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("printer_config")
+}
