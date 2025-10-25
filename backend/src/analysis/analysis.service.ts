@@ -5,6 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { UpdateAnalysisDto } from './dto/update-analysis.dto';
 import { UploadResultsDto } from './dto/upload-results.dto';
@@ -12,7 +13,10 @@ import { AnalysisStatus } from '@prisma/client';
 
 @Injectable()
 export class AnalysisService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   /**
    * Crea un nuevo análisis para una muestra
@@ -388,7 +392,21 @@ export class AnalysisService {
       where: { id },
       data: dataToUpdate,
       include: {
-        sample: true,
+        sample: {
+          include: {
+            requirement: {
+              include: {
+                investigador: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         tipoAnalisis: true,
         responsable: {
           select: {
@@ -399,6 +417,22 @@ export class AnalysisService {
         },
       },
     });
+
+    // Enviar notificación al investigador
+    if (updated.sample?.requirement?.investigador) {
+      try {
+        await this.notificationsService.notifyAnalysisCompleted({
+          to: updated.sample.requirement.investigador.email,
+          investigadorNombre: updated.sample.requirement.investigador.nombre,
+          codigoQR: updated.sample.codigoQR,
+          tipoAnalisis: updated.tipoAnalisis.nombre,
+          fechaFin: updated.fechaFin,
+        });
+      } catch (error) {
+        console.error('Error al enviar notificación de análisis completado:', error);
+        // No lanzar error para no bloquear la finalización del análisis
+      }
+    }
 
     return updated;
   }

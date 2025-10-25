@@ -4,14 +4,19 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateStorageDto } from './dto/create-storage.dto';
 import { UpdateStorageDto } from './dto/update-storage.dto';
 import { StorageStatus } from '@prisma/client';
 
 @Injectable()
 export class StorageService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   /**
    * Almacena una muestra en bodega
@@ -433,5 +438,71 @@ export class StorageService {
     });
 
     return { message: 'Registro de almacenamiento eliminado exitosamente' };
+  }
+
+  /**
+   * Tarea programada: Verifica muestras próximas a vencer y envía notificaciones
+   * Se ejecuta todos los días a las 8:00 AM
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  async checkExpiringStorages() {
+    console.log('Verificando muestras próximas a vencer...');
+
+    try {
+      // Obtener muestras que vencen en los próximos 7 días
+      const expiringSoon = await this.getExpiringSoon(7);
+
+      if (expiringSoon.length === 0) {
+        console.log('No hay muestras próximas a vencer.');
+        return;
+      }
+
+      // Agrupar por investigador
+      const byInvestigador = new Map<string, typeof expiringSoon>();
+
+      for (const storage of expiringSoon) {
+        const investigador = storage.sample?.requirement?.investigador;
+        if (!investigador) continue;
+
+        if (!byInvestigador.has(investigador.email)) {
+          byInvestigador.set(investigador.email, []);
+        }
+
+        byInvestigador.get(investigador.email)!.push(storage);
+      }
+
+      // Enviar notificación a cada investigador
+      for (const [email, storages] of byInvestigador.entries()) {
+        try {
+          const investigadorNombre =
+            storages[0].sample?.requirement?.investigador?.nombre || 'Investigador';
+
+          await this.notificationsService.notifyStorageExpiration({
+            to: email,
+            investigadorNombre,
+            samples: storages.map((s) => ({
+              codigoQR: s.sample?.codigoQR || '',
+              ubicacion: s.ubicacionFisica,
+              fechaVencimiento: s.fechaVencimientoEstimada,
+            })),
+          });
+
+          console.log(
+            `Notificación de vencimiento enviada a ${email} (${storages.length} muestras)`,
+          );
+        } catch (error) {
+          console.error(
+            `Error al enviar notificación de vencimiento a ${email}:`,
+            error,
+          );
+        }
+      }
+
+      console.log(
+        `Verificación completada. ${expiringSoon.length} muestras próximas a vencer, notificaciones enviadas a ${byInvestigador.size} investigadores.`,
+      );
+    } catch (error) {
+      console.error('Error en tarea programada de verificación de vencimientos:', error);
+    }
   }
 }
