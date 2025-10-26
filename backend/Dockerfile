@@ -12,7 +12,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install ALL dependencies (needed for build)
-RUN npm ci && \
+RUN npm install && \
     npm cache clean --force
 
 # Copy source code
@@ -25,7 +25,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Install only production dependencies for final image
-RUN npm ci --only=production && \
+RUN npm install --only=production && \
     npm cache clean --force
 
 # Stage 2: Production
